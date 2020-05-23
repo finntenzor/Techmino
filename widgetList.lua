@@ -361,9 +361,13 @@ local widgetList={
 		back=	newButton(640,600,200,80,C.white,40,SCN.back,nil,"chi"),
 	},
 	help={
-		his=	newButton(1050,500,250,80,C.white,35,function()SCN.push()SCN.swapTo("history")end,nil,"back"),
-		qq=		newButton(1050,600,250,80,C.white,35,function()love.system.openURL("tencent://message/?uin=1046101471&Site=&Menu=yes")end,mobileHide,"his"),
-		back=	newButton(640,600,200,80,C.white,40,SCN.back,nil,"qq"),
+		staff=	newButton(980,500,150,80,C.white,32,function()SCN.push()SCN.swapTo("staff")end,nil,"his"),
+		his=	newButton(1160,500,150,80,C.white,32,function()SCN.push()SCN.swapTo("history")end,nil,"qq"),
+		qq=		newButton(980,600,150,80,C.white,32,function()love.system.openURL("tencent://message/?uin=1046101471&Site=&Menu=yes")end,mobileHide,"back"),
+		back=	newButton(640,600,200,80,C.white,40,SCN.back,nil,"staff"),
+	},
+	staff={
+		back=	newButton(1160,630,150,80,C.white,40,SCN.back),
 	},
 	history={
 		prev=	newButton(1155,170,180,180,C.white,65,pressKey("up"),function()return sceneTemp[2]==1 end),

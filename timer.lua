@@ -283,4 +283,8 @@ function Tmr.setting_control()
 		end
 	end
 end
+function Tmr.staff(dt)
+	local S=sceneTemp
+	S.time=S.time+dt
+end
 return Tmr

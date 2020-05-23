@@ -54,7 +54,7 @@ local function VirtualkeyPreview()
 				local c=sceneTemp.sel==i and .6 or 1
 				gc.setColor(c,1,c,setting.VKAlpha*.1)
 				gc.setLineWidth(B.r*.07)
-				gc.circle("line",B.x,B.y,B.r)
+				gc.circle("line",B.x,B.y,B.r,10)
 				if setting.VKIcon then gc.draw(VKIcon[i],B.x,B.y,nil,B.r*.025,nil,18,18)end
 			end
 		end
@@ -667,7 +667,7 @@ function Pnt.help()
 	setFont(20)
 	gc.setColor(1,1,1)
 	for i=1,#text.help do
-		gc.printf(text.help[i],150,30*i-10,1000,"center")
+		gc.printf(text.help[i],150,35*i+40,1000,"center")
 	end
 	setFont(19)
 	gc.print(text.used,30,330)
@@ -683,6 +683,17 @@ function Pnt.help()
 	setFont(30)
 	mStr(text.support,150+sin(Timer()*4)*20,283)
 	mStr(text.support,1138-sin(Timer()*4)*20,270)
+end
+function Pnt.staff()
+	setFont(40)
+	local L=text.staff
+	local t=sceneTemp.time
+	if t>45 then t=45 end
+	for i=1,#L do
+		mStr(L[i],640,800+80*i-t*40)
+	end
+	mDraw(IMG.coloredTitleImage,640,800-t*40,nil,2)
+	mDraw(IMG.coloredTitleImage,640,2160-t*40,nil,2)
 end
 function Pnt.stat()
 	local chart=sceneTemp.chart

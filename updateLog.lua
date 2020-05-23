@@ -94,9 +94,16 @@ Future outlook:
 		new AI: task-Z
 
 0.8.22: Details Updated
+	new:
+		staff page added
 	changed:
+		kick-list of pentomino optimized
 		won't show "open saving folder" button on mobile devices
 		reset all settings
+	code:
+		player generator optimized by FinnTenzor
+	fixed:
+		some times error when any AI exists (wrong kickList code)
 
 0.8.21: Bug Fixed
 	changed:

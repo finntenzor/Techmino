@@ -54,7 +54,7 @@ local function VirtualkeyPreview()
 				local c=sceneTemp.sel==i and .6 or 1
 				gc.setColor(c,1,c,setting.VKAlpha*.1)
 				gc.setLineWidth(B.r*.07)
-				gc.circle("line",B.x,B.y,B.r)
+				gc.circle("line",B.x,B.y,B.r,10)
 				if setting.VKIcon then gc.draw(VKIcon[i],B.x,B.y,nil,B.r*.025,nil,18,18)end
 			end
 		end
@@ -202,11 +202,9 @@ function Pnt.mode()
 			end
 			_=drawableText[rankString[modeRanks[M.id]]]
 			if _ then
-				local dx,dy=6.26*sin(Timer()*1.26+M.id),12.6*sin(Timer()+M.id)
-				gc.setColor(0,0,0,.5)
+				local dx,dy=6.26*sin(Timer()*0.626+M.id),6.6*sin(Timer()+M.id)
+				gc.setColor(0,0,0,.26)
 				mDraw(_,M.x+dx*1.5,M.y+dy*1.5)
-				gc.setColor(1,1,1,.8)
-				mDraw(_,M.x+dx,M.y+dy)
 			end
 			--[[
 			if M.icon then
@@ -422,6 +420,13 @@ function Pnt.play()
 			gc.origin()
 			gc.rectangle("fill",0,0,scr.w,scr.h)
 		gc.pop()
+	end
+	if game.warnLVL>0 then
+		gc.setColor(0,0,0)
+		SHADER.warning:send("level",game.warnLVL)
+		gc.setShader(SHADER.warning)
+		gc.rectangle("fill",0,0,scr.w,scr.h)
+		gc.setShader()
 	end
 end
 local hexList={1,0,.5,1.732*.5,-.5,1.732*.5}for i=1,6 do hexList[i]=hexList[i]*150 end
@@ -667,7 +672,7 @@ function Pnt.help()
 	setFont(20)
 	gc.setColor(1,1,1)
 	for i=1,#text.help do
-		gc.printf(text.help[i],150,30*i-10,1000,"center")
+		gc.printf(text.help[i],150,35*i+40,1000,"center")
 	end
 	setFont(19)
 	gc.print(text.used,30,330)
@@ -683,6 +688,17 @@ function Pnt.help()
 	setFont(30)
 	mStr(text.support,150+sin(Timer()*4)*20,283)
 	mStr(text.support,1138-sin(Timer()*4)*20,270)
+end
+function Pnt.staff()
+	setFont(40)
+	local L=text.staff
+	local t=sceneTemp.time
+	if t>45 then t=45 end
+	for i=1,#L do
+		mStr(L[i],640,800+80*i-t*40)
+	end
+	mDraw(IMG.coloredTitleImage,640,800-t*40,nil,2)
+	mDraw(IMG.coloredTitleImage,640,2160-t*40,nil,2)
 end
 function Pnt.stat()
 	local chart=sceneTemp.chart

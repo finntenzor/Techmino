@@ -1082,6 +1082,8 @@ function player.garbageRelease(P)
 
 	local online = P.gameEnv.online
 
+	-- @NeedHelp 我这里似乎n和flag被我搞崩了
+	-- 希望我对n和flag的理解是对的
 	local n,flag=1
 	while true do
 		local A=P.atkBuffer[n]
@@ -1095,7 +1097,6 @@ function player.garbageRelease(P)
 				P.atkBuffer.sum=P.atkBuffer.sum-A.amount
 				A.sent,A.time=true,0
 				P.stat.pend=P.stat.pend+A.amount
-				n=n+1
 				flag=true
 				-- 多人游戏的时候 除了收垃圾行本人释放垃圾
 				-- 然后把包3发出去 告诉其他人 垃圾行已经涨了
@@ -1104,6 +1105,7 @@ function player.garbageRelease(P)
 					P:recordAction(netMsg.garbageEffect(A.id))
 				end
 			end
+			n=n+1
 		else
 			break
 		end
@@ -2110,7 +2112,7 @@ function player.remoteControlGetGarbageSend(P, msg)
 	-- print('')
 	-- print('get packet 1, pid=', P.id,'rid=',R.id,'gid=',msg.garbageID)
 	-- print('get packet 1, P.human=', P.human, 'R.human=',R.human)
-	-- print('get packet 1, before #cache=', #R.remoteAtkCache)
+	-- print('get packet 1, before #R.cache=', #R.remoteAtkCache)
 
 	-- 接下来 被攻击的人和并不是被攻击的人区别不同
 	if R.human then
@@ -2152,6 +2154,12 @@ function player.remoteControlGetGarbageReceive(P, msg)
 	local garbageID = msg.garbageID
 
 	local R = players[receivePlayerID]
+
+	-- print('')
+	-- print('get packet 2, pid=', P.id,'rid=',R.id,'gid=',msg.garbageID)
+	-- print('get packet 2, P.human=', P.human, 'R.human=',R.human)
+	-- print('get packet 2, before #R.cache=', #R.remoteAtkCache)
+
 	assert(R.id == P.id, 'should equals')
 	local atk = nil
 	local n = #R.remoteAtkCache
@@ -2165,6 +2173,7 @@ function player.remoteControlGetGarbageReceive(P, msg)
 		end
 	end
 	assert(atk ~= nil, 'attack not found, id = ' .. garbageID)
+	-- print('get packet 2, after #R.cache=', #R.remoteAtkCache)
 
 	local garbageID = atk.garbageID
 	local send = atk.send
@@ -2177,6 +2186,7 @@ function player.remoteControlGetGarbageReceive(P, msg)
 	-- 也就是这种方法产生的垃圾行 会倒计时 但是即使闪烁
 	-- 也不会因为用户操作而rise 除非收到包3
 	R:receiveGarbage(P,send,time,pos,garbageID)
+	-- print('get packet 2 receiveGarbage OK', P.id, send, time, pos, garbageID)
 end
 
 function player.remoteControlGetGarbageEffect(P, msg)
@@ -2187,6 +2197,11 @@ function player.remoteControlGetGarbageEffect(P, msg)
 	local garbageID = msg.garbageID
 
 	local R = players[receivePlayerID]
+
+	-- print('')
+	-- print('get packet 3, pid=', P.id,'rid=',R.id,'gid=',msg.garbageID)
+	-- print('get packet 3, P.human=', P.human, 'R.human=',R.human)
+
 	assert(R.id == P.id, 'should equals')
 
 	-- 在atkBuffer中找到这个攻击的包
@@ -2205,8 +2220,11 @@ function player.remoteControlGetGarbageEffect(P, msg)
 			-- 所以结果上是一样的 不需要写额外代码
 			ack.countdown = 0
 			ack.id = nil
+			break
 		end
 	end
+
+	-- print('get packet 3, modify attack ok')
 end
 
 --- 记录该Player的一个操作 如果没有设置recorder则忽略 远程玩家同样忽略

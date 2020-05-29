@@ -1273,13 +1273,22 @@ function player.resetBlock(P)
 	P.curX=int(6-P.c*.5)
 	local y=21+ceil(P.fieldBeneath/30)
 	P.curY=y
-	if P.gameEnv.ims and(P.keyPressing[1]and P.movDir==-1 or P.keyPressing[2]and P.movDir==1)and P.moving>=P.gameEnv.das then
-		local x=P.curX+P.movDir
-		if not P:ifoverlap(P.cur.bk,x,y)then
-			P.curX=x
+	if P.gameEnv.online then
+		-- 由于resetBlock是在popNext中调用
+		-- 导致目前这种情况下预移动消息没法生效
+		-- 从而导致序列裂开
+		-- 所以先把多人联机时的预移动关闭了
+	else
+		if P.gameEnv.ims and(P.keyPressing[1]and P.movDir==-1 or P.keyPressing[2]and P.movDir==1)and P.moving>=P.gameEnv.das then
+			-- 这块好像是预移动 总之加一个hook
+			local x=P.curX+P.movDir
+			if not P:ifoverlap(P.cur.bk,x,y)then
+				-- P:recordAction(netMsg.move(P.movDir))
+				P.curX=x
+			end
 		end
 	end
-	--IMS
+	-- IMS
 end
 function player.hold(P,ifpre)
 	P:recordAction(netMsg.hold())
@@ -2012,7 +2021,7 @@ function player.remoteControlHardDrop(P)
 	end
 	P.lockDelay = -1
 	P:drop()
-	P.keyPressing[6] = false -- @NeedHelp 这个需要吗 也许可以删？
+	-- P.keyPressing[6] = false -- @NeedHelp 这个需要吗 也许可以删？
 end
 --- 远程控制 软降
 -- @param P Player 玩家

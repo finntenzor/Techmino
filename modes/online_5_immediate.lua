@@ -1,39 +1,35 @@
+local netRandom = require('parts/network/random')
+
 local function consistentSequence(seed)
-	local history = {}
-	local indexMap = {}
-	math.randomseed(seed)
+	local rs = {}
+	for i = 1, 5 do
+		rs[i] = netRandom.new(seed)
+	end
 
-	local function pushBag()
+	local function makeBag(playerID)
 		local bag = {1,2,3,4,5,6,7}
+		local result = {}
+		local r = rs[playerID]
 		for i = 1, 7 do
-			local choose = table.remove(bag, math.random(#bag))
-			table.insert(history, choose)
+			local choose = table.remove(bag, math.ceil(r:next() * #bag))
+			table.insert(result, choose)
 		end
-	end
-
-	local function get(index)
-		while #history < index do
-			pushBag()
-		end
-		return history[index]
-	end
-
-	local function next(id)
-		if indexMap[id] == nil then
-			indexMap[id] = 1
-		end
-		local num = get(indexMap[id])
-		indexMap[id] = indexMap[id] + 1
-		return num
+		return result
 	end
 
 	local function sequence(P)
+		rs[P.id]:reset()
+		local bag = makeBag(P.id)
 		for i = 1, 7 do
-			P:getNext(next(P.id))
+			P:getNext(bag[i])
 		end
 	end
+
 	local function freshMethod(P)
-		P:getNext(next(P.id))
+		local bag = makeBag(P.id)
+		for i = 1, 7 do
+			P:getNext(bag[i])
+		end
 	end
 	return sequence, freshMethod
 end

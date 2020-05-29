@@ -65,6 +65,7 @@ local scs=require("parts/spinCenters")
 local kickList=require("parts/kickList")
 local netMsg=require('parts/network/message')
 local netRecorder=require('parts/network/recorder')
+local netFacade=require('parts/network/facade')
 local finesseList={
 	[1]={
 		{1,2,1,0,1,2,2,1},
@@ -1026,53 +1027,83 @@ function player.fineError(P,rate)
 		P:lose()
 	end
 end
+function player.receiveGarbage(R,P,send,time,pos,garbageID)
+	R.lastRecv=P
+	if R.atkBuffer.sum<20 then
+		local B=R.atkBuffer
+		if B.sum+send>20 then send=20-B.sum end--no more then 20
+		local m,k=#B,1
+		while k<=m and time>B[k].countdown do k=k+1 end
+		for i=m,k,-1 do
+			B[i+1]=B[i]
+		end
+		B[k]={
+			-- 添加的新参数 默认为nil
+			-- 本地游戏时id为nil
+			-- 多人游戏时id为服务给出的一个数字
+			-- 仅等到收到垃圾行的人确定rise的时候 把id改为nil
+			-- 并升起垃圾
+			id=garbageID,
+			pos=pos,
+			amount=send,
+			countdown=time,
+			cd0=time,
+			time=0,
+			sent=false,
+			lv=min(int(send^.69),5),
+		}--Sorted insert(by time)
+		B.sum=B.sum+send
+		R.stat.recv=R.stat.recv+send
+		if R.human then
+			SFX.play(send<4 and "blip_1"or"blip_2",min(send+1,5)*.1)
+		end
+	end
+end
 function player.garbageSend(P,R,send,time,...)
 	local online=P.gameEnv.online
 	if online then
 		-- 在线多人游戏则通过网络传递消息 并不立刻发送
 		local target = R.id
-		P:recordAction(netMsg.garbageSend(target, send, time))
+		-- 先把目标玩家ID转换成他的客户端ID
+		-- 玩家ID每个人表不一样 但是客户端ID每个人一致
+		local targetClientID = netFacade.pid2cid(target)
+		P:recordAction(netMsg.garbageSend(targetClientID, send, time))
 	else
 		if setting.atkFX>0 then
 			P:createBeam(R,send,time,...)
 		end
-		R.lastRecv=P
-		if R.atkBuffer.sum<20 then
-			local B=R.atkBuffer
-			if B.sum+send>20 then send=20-B.sum end--no more then 20
-			local m,k=#B,1
-			while k<=m and time>B[k].countdown do k=k+1 end
-			for i=m,k,-1 do
-				B[i+1]=B[i]
-			end
-			B[k]={
-				pos=rnd(10),
-				amount=send,
-				countdown=time,
-				cd0=time,
-				time=0,
-				sent=false,
-				lv=min(int(send^.69),5),
-			}--Sorted insert(by time)
-			B.sum=B.sum+send
-			R.stat.recv=R.stat.recv+send
-			if R.human then
-				SFX.play(send<4 and "blip_1"or"blip_2",min(send+1,5)*.1)
-			end
-		end
+		R:receiveGarbage(P,send,time,rnd(10))
 	end
 end
 function player.garbageRelease(P)
+	-- 这个函数每一帧都会执行
+	-- 表示尝试把现在所有已经闪烁的垃圾行都涨起来
+	-- 一旦某A的sent设为true 就会当作这个攻击已经生效了
+
+	local online = P.gameEnv.online
+
 	local n,flag=1
 	while true do
 		local A=P.atkBuffer[n]
+		-- @Modify 这里判断了id是否为nil
+		-- 也就是
 		if A and A.countdown<=0 and not A.sent then
-			P:garbageRise(12+A.lv,A.amount,A.pos)
-			P.atkBuffer.sum=P.atkBuffer.sum-A.amount
-			A.sent,A.time=true,0
-			P.stat.pend=P.stat.pend+A.amount
-			n=n+1
-			flag=true
+			-- A.id==nil 本地游戏 或者由于包2而呗重置为nil
+			-- online and human 多人游戏 并且这个是收垃圾行那个人
+			if A.id == nil or (online and P.human) then
+				P:garbageRise(12+A.lv,A.amount,A.pos)
+				P.atkBuffer.sum=P.atkBuffer.sum-A.amount
+				A.sent,A.time=true,0
+				P.stat.pend=P.stat.pend+A.amount
+				n=n+1
+				flag=true
+				-- 多人游戏的时候 除了收垃圾行本人释放垃圾
+				-- 然后把包3发出去 告诉其他人 垃圾行已经涨了
+				if online and P.human then
+					assert(A.id ~= nil, 'online game always have garbage id')
+					P:recordAction(netMsg.garbageEffect(A.id))
+				end
+			end
 		else
 			break
 		end
@@ -1080,6 +1111,7 @@ function player.garbageRelease(P)
 	if flag and P.AI_mode=="CC"then CC_updateField(P)end
 end
 function player.garbageRise(P,color,amount,pos)
+	-- 涨垃圾行
 	local _
 	local t=P.showTime*2
 	for _=1,amount do
@@ -2046,47 +2078,134 @@ end
 function player.remoteControlHold(P)
 	P:hold()
 end
---- 远程控制 发送垃圾行
--- @param P Player 玩家
--- @param targetID int 发给谁
--- @param send int 垃圾行总数
--- @param time int 多久后垃圾行生效(闪烁时间) 单位帧
--- @param target int 目标 @NeedHelp 不确定具体含义
--- @param color int 颜色编号
--- @param clear int clear @NeedHelp 不确定具体含义
--- @param spin int 旋 @NeedHelp 不确定具体含义
--- @param mini bool|nil 是否是mini @NeedHelp 不确定具体含义
--- @param combo int 第几次连击
-function player.remoteControlGarbageSend(P, targetID, send, time, target, color, clear, spin, mini, combo)
-	-- @NeedHelp 我强烈怀疑我写的有问题
-	local targetPlayer = players[targetID]
-	P:garbageSend(targetPlayer, send, time, target, color, clear, spin, mini, combo)
+
+-- --- 远程控制 发送垃圾行
+-- -- @param P Player 玩家
+-- -- @param targetID int 发给谁
+-- -- @param send int 垃圾行总数
+-- -- @param time int 多久后垃圾行生效(闪烁时间) 单位帧
+-- -- @param target int 目标 @NeedHelp 不确定具体含义
+-- -- @param color int 颜色编号
+-- -- @param clear int clear @NeedHelp 不确定具体含义
+-- -- @param spin int 旋 @NeedHelp 不确定具体含义
+-- -- @param mini bool|nil 是否是mini @NeedHelp 不确定具体含义
+-- -- @param combo int 第几次连击
+-- function player.remoteControlGarbageSend(P, targetID, send, time, target, color, clear, spin, mini, combo)
+-- 	-- @NeedHelp 我强烈怀疑我写的有问题
+-- 	local targetPlayer = players[targetID]
+-- 	P:garbageSend(targetPlayer, send, time, target, color, clear, spin, mini, combo)
+-- end
+
+function player.remoteControlGetGarbageSend(P, msg)
+	-- 攻击者 被攻击者 无关人员都需要收到这个消息
+	-- 因为攻击者也不知道垃圾行的洞在什么位置
+
+	-- 注：由于network里面没有改分发机制
+	-- 而消息中的clientID表示的是发出消息的人的ID
+	-- 所以这里P是发出攻击的人
+
+	-- 先找到接收攻击的人
+	local RID = netFacade.cid2pid(msg.target)
+	local R = players[RID]
+	-- print('')
+	-- print('get packet 1, pid=', P.id,'rid=',R.id,'gid=',msg.garbageID)
+	-- print('get packet 1, P.human=', P.human, 'R.human=',R.human)
+	-- print('get packet 1, before #cache=', #R.remoteAtkCache)
+
+	-- 接下来 被攻击的人和并不是被攻击的人区别不同
+	if R.human then
+		-- 被攻击的人就是当前本地客户端玩家
+		-- 那么需要做两件事情 第一个是立刻release这个攻击
+		-- 另一个是把包2发出去 通知其他玩家自己release了这个攻击
+
+		-- @NeedHelp 这里应该需要createBeam的参数 但是我不知道应该填什么
+		-- if setting.atkFX>0 then
+		-- 	P:createBeam(R,send,time,...)
+		-- end
+		local garbageID = msg.garbageID
+		local send = msg.send
+		local time = msg.time
+		local pos = msg.position
+
+		-- 涨缓冲区
+		R:receiveGarbage(P,send,time,pos,garbageID)
+
+		-- 发出消息 告诉其他客户端 我收到垃圾了(包2)
+		R:recordAction(netMsg.garbageReceive(msg.garbageID))
+	else
+		-- 自己不是被攻击的人
+		-- 那就不先立刻涨缓冲区 等包2到了再涨
+		ins(R.remoteAtkCache, msg)
+	end
+	-- print('get packet 1, after #cache=', #R.remoteAtkCache)
+
+	-- else 被攻击的人不是当前玩家 那就不管了
+	-- 被攻击的人不是当前玩家 就只保存这个攻击
+	-- 等收到包2的时候再 release
 end
 
-function player.remoteControlRiseGarbage(P, send, time, holdPosition)
-	P.lastRecv=P -- who cares, go next
-	local B = P.atkBuffer
-	if B.sum < 20 then
-		send = math.min(send, 20 - B.sum) --no more then 20
-		local m,k=#B,1
-		while k<=m and time>B[k].countdown do k=k+1 end
-		for i=m,k,-1 do
-			B[i+1]=B[i]
+function player.remoteControlGetGarbageReceive(P, msg)
+	-- 发出包2的人 就是被攻击的那个人
+	-- 被攻击的人自己收不到这个包
+	local receiveClientID = msg.clientID
+	local receivePlayerID = netFacade.cid2pid(receiveClientID)
+	local garbageID = msg.garbageID
+
+	local R = players[receivePlayerID]
+	assert(R.id == P.id, 'should equals')
+	local atk = nil
+	local n = #R.remoteAtkCache
+	for i = 1, n do
+		local item = R.remoteAtkCache[i]
+		-- item类型为MESSAGE_GARBAGE_SEND的Message
+		if item.garbageID == garbageID then
+			-- 移除之前缓存的攻击
+			atk = rem(R.remoteAtkCache, i)
+			break
 		end
-		B[k]={
-			pos=holdPosition,
-			amount=send,
-			countdown=time,
-			cd0=time,
-			time=0,
-			sent=false,
-			lv=min(int(send^.69),5),
-		}--Sorted insert(by time)
-		B.sum=B.sum+send
-		P.stat.recv=P.stat.recv+send
-		-- if P.human then
-		-- 	SFX.play(send<4 and "blip_1"or"blip_2",min(send+1,5)*.1)
-		-- end
+	end
+	assert(atk ~= nil, 'attack not found, id = ' .. garbageID)
+
+	local garbageID = atk.garbageID
+	local send = atk.send
+	local time = atk.time
+	local pos = atk.position
+
+	-- 涨缓冲区 这里有ID
+	-- garbageRelease中 online为真 human为假
+	-- 所以缓冲区会涨 但是garbageRelease是不会把这个垃圾rise掉的
+	-- 也就是这种方法产生的垃圾行 会倒计时 但是即使闪烁
+	-- 也不会因为用户操作而rise 除非收到包3
+	R:receiveGarbage(P,send,time,pos,garbageID)
+end
+
+function player.remoteControlGetGarbageEffect(P, msg)
+	-- 发出包3的人 就是被攻击的那个人
+	-- 被攻击的人自己收不到这个包
+	local receiveClientID = msg.clientID
+	local receivePlayerID = netFacade.cid2pid(receiveClientID)
+	local garbageID = msg.garbageID
+
+	local R = players[receivePlayerID]
+	assert(R.id == P.id, 'should equals')
+
+	-- 在atkBuffer中找到这个攻击的包
+	local n = #R.atkBuffer
+	for i = 1, n do
+		local ack = R.atkBuffer[i]
+		if ack.id == garbageID then
+			-- 这样的写法其实比较逃课
+			-- 当id被置为nil 那么garbageRelease的处理逻辑会跟本地游戏一样
+			-- 也就是如果时间时间到0了 就会上涨
+			-- 所以这里把countdown设置为0 并把id设置nil
+			-- 那么这个垃圾行一定会涨起来
+
+			-- 至于如果收垃圾行的人把垃圾行抵消了呢？
+			-- 那当然抵消的代码我没有动 自然会因为落块消行而抵消
+			-- 所以结果上是一样的 不需要写额外代码
+			ack.countdown = 0
+			ack.id = nil
+		end
 	end
 end
 
@@ -2116,35 +2235,16 @@ function player.applyMessage(P, msg)
 		P:remoteControlLock()
 	elseif code == netMsg.MESSAGE_HOLD then
 		P:remoteControlHold()
-	-- elseif code == netMsg.MESSAGE_RISE_GARBAGE then
-	-- 	P:remoteControlRiseGarbage()
+	elseif code == netMsg.MESSAGE_GARBAGE_SEND then
+		P:remoteControlGetGarbageSend(msg)
+	elseif code == netMsg.MESSAGE_GARBAGE_RECEIVE then
+		P:remoteControlGetGarbageReceive(msg)
+	elseif code == netMsg.MESSAGE_GARBAGE_RECEIVE then
+		P:remoteControlGetGarbageReceive(msg)
+	elseif code == netMsg.MESSAGE_GARBAGE_EFFECT then
+		P:remoteControlGetGarbageEffect(msg)
 	end
 end
-
--- --- 给RemotePlayer单独留的时间片
--- -- @param P Player 玩家
--- function player.remoteUpdate(P)
--- 	local R = P.recorder
--- 	local n = #R.actions
--- 	for i = 1, n do
--- 		local msg = R.actions[i]
--- 		P:applyMessage(msg)
--- 	end
--- 	R:clear()
--- end
-
--- function player.sendMessage(P)
--- 	if P.remote then
--- 		return
--- 	end
--- 	if P.recorder then
--- 		local actions = P.recorder.actions
--- 		for i = 1, #actions do
--- 			client.write(conn, actions[i])
--- 		end
--- 		-- P.recorder:removeLast()
--- 	end
--- end
 --------------------------</RemoteControl>--------------------------
 
 --------------------------<Control>--------------------------
@@ -2667,6 +2767,7 @@ function PLY.newRemotePlayer(id,x,y,size,actions)
 
 	P.human=false -- 录像不是人为操作
 	P.remote=true -- 远程操作
+	P.remoteAtkCache={} -- 远程攻击缓存 先知道有人发起攻击 但是不生效
 
 	loadGameEnv(P)
 	applyGameEnv(P)
@@ -2678,7 +2779,7 @@ function PLY.newRemotePlayer(id,x,y,size,actions)
 end
 function PLY.newAIPlayer(id,x,y,size,AIdata)
 	local P=newEmptyPlayer(id,x,y,size)
-
+	local ENV=P.gameEnv
 	if P.small then
 		ENV.text=false
 		ENV.lockFX=nil
@@ -2694,7 +2795,7 @@ function PLY.newAIPlayer(id,x,y,size,AIdata)
 	ENV.face={0,0,0,0,0,0,0}
 	ENV.skin={1,5,8,2,10,3,7}
 	P.human=false
-	loadAI(AIdata)
+	loadAI(P,AIdata)
 end
 function PLY.newPlayer(id,x,y,size)
 	local P=newEmptyPlayer(id,x,y,size)
@@ -2708,6 +2809,7 @@ function PLY.newPlayer(id,x,y,size)
 	players.human=players.human+1
 
 	P.recorder = netRecorder.new()
+	P.remoteAtkCache={}
 end
 --------------------------</Generator>--------------------------
 return PLY

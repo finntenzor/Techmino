@@ -1,14 +1,14 @@
-
-local MESSAGE_MOVE = 1
-local MESSAGE_DOWN = 2
-local MESSAGE_SPIN = 3
-local MESSAGE_HARD_DROP = 4
-local MESSAGE_LOCK = 5
-local MESSAGE_HOLD = 6
-local MESSAGE_GARBAGE_SEND = 7
-local MESSAGE_GARBAGE_RECEIVE = 8
-local MESSAGE_GARBAGE_EFFECT = 9
-local MESSAGE_STEP = 10
+local MESSAGE_OPEN = 1
+local MESSAGE_MOVE = 2
+local MESSAGE_DOWN = 3
+local MESSAGE_SPIN = 4
+local MESSAGE_HARD_DROP = 5
+local MESSAGE_LOCK = 6
+local MESSAGE_HOLD = 7
+local MESSAGE_GARBAGE_SEND = 8
+local MESSAGE_GARBAGE_RECEIVE = 9
+local MESSAGE_GARBAGE_EFFECT = 10
+local MESSAGE_STEP = 11
 local MESSAGE_MAP = {
     [MESSAGE_MOVE] = 'move', -- 水平移动
     [MESSAGE_DOWN] = 'down', -- 垂直移动
@@ -139,7 +139,7 @@ end
 local function garbageSend(target, send, time)
     local msg = new(0, MESSAGE_GARBAGE_SEND)
     msg.garbageID = 0
-    msg.from = 0
+    -- msg.from = 0 -- 似乎是不必要的
     msg.target = target
     msg.send = send
     msg.time = time
@@ -160,6 +160,7 @@ local function garbageEffect(garbageID)
 end
 
 local exports = {
+    MESSAGE_OPEN = MESSAGE_OPEN,
     MESSAGE_MOVE = MESSAGE_MOVE,
     MESSAGE_DOWN = MESSAGE_DOWN,
     MESSAGE_SPIN = MESSAGE_SPIN,

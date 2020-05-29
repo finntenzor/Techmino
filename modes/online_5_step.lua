@@ -1,0 +1,18 @@
+return{
+	color=color.white,
+	env={
+		drop=60,lock=60,
+		freshLimit=15,
+		bg="none",bgm="way",
+		online=true,
+	},
+	load=function()
+		PLY.newPlayer(1,10,10,1)
+		PLY.newPlayer(2,650,50,.4)
+		PLY.newPlayer(3,935,50,.4)
+		PLY.newPlayer(4,650,400,.4)
+		PLY.newPlayer(5,935,400,.4)
+	end,
+	mesDisp=function(P,dx,dy)
+	end,
+}

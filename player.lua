@@ -37,7 +37,9 @@ local gameEnv0={
 	target=1e99,dropPiece=NULL,
 	mindas=0,minarr=0,minsdarr=0,
 
-	bg="none",bgm="race"
+	bg="none",bgm="race",
+
+	online=false,
 }
 local WidComboAtk={0,0,1,1,2,2,2,3,3,3,4,4,3}--2 else
 local DigComboAtk={0,0,1,1,2,2,3,3,4,4,4}--5 else
@@ -61,6 +63,8 @@ local reAtk={0,0,1,1,1,2,2,3,3}
 local reDef={0,1,1,2,3,3,4,4,5}
 local scs=require("parts/spinCenters")
 local kickList=require("parts/kickList")
+local netMsg=require('parts/network/message')
+local netRecorder=require('parts/network/recorder')
 local finesseList={
 	[1]={
 		{1,2,1,0,1,2,2,1},
@@ -236,14 +240,19 @@ local function Pupdate_alive(P,dt)
 	end
 
 	if not P.human and P.control and P.waiting==-1 then
-		local C=P.AI_keys
-		P.AI_delay=P.AI_delay-1
-		if not C[1]then
-			P.AI_stage=AI_think[P.AI_mode][P.AI_stage](P,C)
-		elseif P.AI_delay<=0 then
-			P:pressKey(C[1])P:releaseKey(C[1])
-			rem(C,1)
-			P.AI_delay=P.AI_delay0*2
+		if P.remote then
+			-- 远程玩家human属性也是false
+			-- 应该不操作而不是AI操作
+		else
+			local C=P.AI_keys
+			P.AI_delay=P.AI_delay-1
+			if not C[1]then
+				P.AI_stage=AI_think[P.AI_mode][P.AI_stage](P,C)
+			elseif P.AI_delay<=0 then
+				P:pressKey(C[1])P:releaseKey(C[1])
+				rem(C,1)
+				P.AI_delay=P.AI_delay0*2
+			end
 		end
 	end
 	if not P.keepVisible then
@@ -354,7 +363,13 @@ local function Pupdate_alive(P,dt)
 			goto stop
 		end
 		if D==1 then
-			P.curY=P.curY-1
+			if P.remote then
+				-- 远程操作的玩家纵坐标不直接变化
+				-- 否则会下落速度错误(即处于类似无重力状态)
+			else
+				P.curY=P.curY-1
+				P:recordAction(netMsg.down(1))
+			end
 		else
 			local _=P.curY-P.y_img--max fall dist
 			D=1/D--fall dist
@@ -1006,31 +1021,38 @@ function player.fineError(P,rate)
 	end
 end
 function player.garbageSend(P,R,send,time,...)
-	if setting.atkFX>0 then
-		P:createBeam(R,send,time,...)
-	end
-	R.lastRecv=P
-	if R.atkBuffer.sum<20 then
-		local B=R.atkBuffer
-		if B.sum+send>20 then send=20-B.sum end--no more then 20
-		local m,k=#B,1
-		while k<=m and time>B[k].countdown do k=k+1 end
-		for i=m,k,-1 do
-			B[i+1]=B[i]
+	local online=P.gameEnv.online
+	if online then
+		-- 在线多人游戏则通过网络传递消息 并不立刻发送
+		local target = R.id
+		P:recordAction(netMsg.garbageSend(target, send, time))
+	else
+		if setting.atkFX>0 then
+			P:createBeam(R,send,time,...)
 		end
-		B[k]={
-			pos=rnd(10),
-			amount=send,
-			countdown=time,
-			cd0=time,
-			time=0,
-			sent=false,
-			lv=min(int(send^.69),5),
-		}--Sorted insert(by time)
-		B.sum=B.sum+send
-		R.stat.recv=R.stat.recv+send
-		if R.human then
-			SFX.play(send<4 and "blip_1"or"blip_2",min(send+1,5)*.1)
+		R.lastRecv=P
+		if R.atkBuffer.sum<20 then
+			local B=R.atkBuffer
+			if B.sum+send>20 then send=20-B.sum end--no more then 20
+			local m,k=#B,1
+			while k<=m and time>B[k].countdown do k=k+1 end
+			for i=m,k,-1 do
+				B[i+1]=B[i]
+			end
+			B[k]={
+				pos=rnd(10),
+				amount=send,
+				countdown=time,
+				cd0=time,
+				time=0,
+				sent=false,
+				lv=min(int(send^.69),5),
+			}--Sorted insert(by time)
+			B.sum=B.sum+send
+			R.stat.recv=R.stat.recv+send
+			if R.human then
+				SFX.play(send<4 and "blip_1"or"blip_2",min(send+1,5)*.1)
+			end
 		end
 	end
 end
@@ -1183,6 +1205,7 @@ function player.freshLockDelay(P)
 	end
 end
 function player.lock(P)
+	P:recordAction(netMsg.lock())
 	for i=1,P.r do
 		local y=P.curY+i-1
 		if not P.field[y]then P.field[y],P.visTime[y]=freeRow.get(0),freeRow.get(0)end
@@ -1196,6 +1219,7 @@ function player.lock(P)
 end
 function player.spin(P,d,ifpre)
 	local iki=P.RS[P.cur.id]
+	P:recordAction(netMsg.spin(d))
 	if type(iki)=="table"then
 		local idir=(P.dir+d)%4
 		local icb=blocks[P.cur.id][idir]
@@ -1252,6 +1276,7 @@ function player.resetBlock(P)
 	--IMS
 end
 function player.hold(P,ifpre)
+	P:recordAction(netMsg.hold())
 	if not P.holded and (ifpre or P.waiting==-1) and P.gameEnv.hold then
 		--Finesse check
 		local H,B=P.hd,P.cur
@@ -1935,6 +1960,178 @@ function PLY.reach_winCheck(P)
 end
 --------------------------<\Events>--------------------------
 
+--------------------------<RemoteControl>--------------------------
+-- 以下为远程控制APIs
+-- 用于多人联机的时候应用服务器发来的消息
+-- 主要是针对移动和硬降 把判断切换攻击模式的代码删去了
+-- 另外是暂时把垃圾行的其他参数改为了常量
+
+--- 远程控制 移动
+-- @param P Player 玩家
+-- @param diffX int X方向移动多少格
+function player.remoteControlMove(P, diffX)
+	if not P:ifoverlap(P.cur.bk, P.curX + diffX, P.curY) then
+		P.curX = P.curX + diffX
+		local y0 = P.curY
+		P:freshgho()
+		if P.gameEnv.easyFresh or y0 ~= P.curY then
+			P:freshLockDelay()
+		end
+		-- if P.human and P.curY==P.y_img then SFX.play("move")end
+		P.spinLast=false
+	end
+end
+--- 远程控制 旋转
+-- @param P Player 玩家
+-- @param diffDir int 往哪个方向旋转 1=右旋 3=左旋 2=180度旋
+function player.remoteControlSpin(P, diffDir)
+	P:spin(diffDir)
+end
+--- 远程控制 硬降
+-- @param P Player 玩家
+function player.remoteControlHardDrop(P)
+	if P.curY ~= P.y_img then
+		if P.gameEnv.dropFX then
+			P:createDropFX(P.curX, P.curY + 1, P.curX + P.c - 1, P.y_img + P.r - 1)
+		end
+		P.curY = P.y_img
+		P.spinLast = false
+		if P.gameEnv.shakeFX then
+			P.fieldOff.vy = P.gameEnv.shakeFX * .6
+		end
+		-- if P.human then
+		-- 	SFX.play("drop",nil,getBlockPosition(P))
+		-- 	VIB(1)
+		-- end
+	end
+	P.lockDelay = -1
+	P:drop()
+	P.keyPressing[6] = false -- @NeedHelp 这个需要吗 也许可以删？
+end
+--- 远程控制 软降
+-- @param P Player 玩家
+function player.remoteControlDown(P, dy)
+	for _=1,dy do
+		if P.curY~=P.y_img then
+			P.curY=P.curY-1
+			P.spinLast=false
+		else
+			break
+		end
+	end
+end
+--- 远程控制 锁定
+-- @param P Player 玩家
+function player.remoteControlLock(P)
+	-- 我不确定换lock是否可行 总之先试试呗
+	P:drop()
+end
+--- 远程控制 hold
+-- @param P Player 玩家
+function player.remoteControlHold(P)
+	P:hold()
+end
+--- 远程控制 发送垃圾行
+-- @param P Player 玩家
+-- @param targetID int 发给谁
+-- @param send int 垃圾行总数
+-- @param time int 多久后垃圾行生效(闪烁时间) 单位帧
+-- @param target int 目标 @NeedHelp 不确定具体含义
+-- @param color int 颜色编号
+-- @param clear int clear @NeedHelp 不确定具体含义
+-- @param spin int 旋 @NeedHelp 不确定具体含义
+-- @param mini bool|nil 是否是mini @NeedHelp 不确定具体含义
+-- @param combo int 第几次连击
+function player.remoteControlGarbageSend(P, targetID, send, time, target, color, clear, spin, mini, combo)
+	-- @NeedHelp 我强烈怀疑我写的有问题
+	local targetPlayer = players[targetID]
+	P:garbageSend(targetPlayer, send, time, target, color, clear, spin, mini, combo)
+end
+
+function player.remoteControlRiseGarbage(P, send, time, holdPosition)
+	P.lastRecv=P -- who cares, go next
+	local B = P.atkBuffer
+	if B.sum < 20 then
+		send = math.min(send, 20 - B.sum) --no more then 20
+		local m,k=#B,1
+		while k<=m and time>B[k].countdown do k=k+1 end
+		for i=m,k,-1 do
+			B[i+1]=B[i]
+		end
+		B[k]={
+			pos=holdPosition,
+			amount=send,
+			countdown=time,
+			cd0=time,
+			time=0,
+			sent=false,
+			lv=min(int(send^.69),5),
+		}--Sorted insert(by time)
+		B.sum=B.sum+send
+		P.stat.recv=P.stat.recv+send
+		-- if P.human then
+		-- 	SFX.play(send<4 and "blip_1"or"blip_2",min(send+1,5)*.1)
+		-- end
+	end
+end
+
+--- 记录该Player的一个操作 如果没有设置recorder则忽略 远程玩家同样忽略
+-- @param P Player 玩家
+-- @param msg 消息对象
+function player.recordAction(P, msg)
+	if P.remote then
+		return
+	end
+	if P.recorder then
+		P.recorder:push(msg)
+	end
+end
+
+function player.applyMessage(P, msg)
+	local code = msg.messageType -- 动作编号
+	if code == netMsg.MESSAGE_MOVE then
+		P:remoteControlMove(msg.dx)
+	elseif code == netMsg.MESSAGE_DOWN then
+		P:remoteControlDown(msg.dy)
+	elseif code == netMsg.MESSAGE_SPIN then
+		P:remoteControlSpin(msg.spin)
+	elseif code == netMsg.MESSAGE_HARD_DROP then
+		P:remoteControlHardDrop()
+	elseif code == netMsg.MESSAGE_LOCK then
+		P:remoteControlLock()
+	elseif code == netMsg.MESSAGE_HOLD then
+		P:remoteControlHold()
+	-- elseif code == netMsg.MESSAGE_RISE_GARBAGE then
+	-- 	P:remoteControlRiseGarbage()
+	end
+end
+
+-- --- 给RemotePlayer单独留的时间片
+-- -- @param P Player 玩家
+-- function player.remoteUpdate(P)
+-- 	local R = P.recorder
+-- 	local n = #R.actions
+-- 	for i = 1, n do
+-- 		local msg = R.actions[i]
+-- 		P:applyMessage(msg)
+-- 	end
+-- 	R:clear()
+-- end
+
+-- function player.sendMessage(P)
+-- 	if P.remote then
+-- 		return
+-- 	end
+-- 	if P.recorder then
+-- 		local actions = P.recorder.actions
+-- 		for i = 1, #actions do
+-- 			client.write(conn, actions[i])
+-- 		end
+-- 		-- P.recorder:removeLast()
+-- 	end
+-- end
+--------------------------</RemoteControl>--------------------------
+
 --------------------------<Control>--------------------------
 player.act={}
 function player.act.moveLeft(P,auto)
@@ -1944,11 +2141,14 @@ function player.act.moveLeft(P,auto)
 	P.movDir=-1
 	if P.keyPressing[9]then
 		if P.gameEnv.swap then
+			-- 用户切换到 随机
+			-- P:recordAction()
 			P:changeAtkMode(1)
 			P.keyPressing[1]=false
 		end
 	elseif P.control and P.waiting==-1 then
 		if not P:ifoverlap(P.cur.bk,P.curX-1,P.curY)then
+			P:recordAction(netMsg.move(-1))
 			P.curX=P.curX-1
 			local y0=P.curY
 			P:freshgho()
@@ -1970,11 +2170,14 @@ function player.act.moveRight(P,auto)
 	P.movDir=1
 	if P.keyPressing[9]then
 		if P.gameEnv.swap then
+			-- 用户切换到 徽章
+			-- P:recordAction()
 			P:changeAtkMode(2)
 			P.keyPressing[2]=false
 		end
 	elseif P.control and P.waiting==-1 then
 		if not P:ifoverlap(P.cur.bk,P.curX+1,P.curY)then
+			P:recordAction(netMsg.move(1))
 			P.curX=P.curX+1
 			local y0=P.curY
 			P:freshgho()
@@ -2013,10 +2216,13 @@ end
 function player.act.hardDrop(P)
 	if P.keyPressing[9]then
 		if P.gameEnv.swap then
+			-- 用户切换到 击杀
+			-- P:recordAction()
 			P:changeAtkMode(3)
 		end
 		P.keyPressing[6]=false
 	elseif P.control and P.waiting==-1 then
+		P:recordAction(netMsg.hardDrop())
 		if P.curY~=P.y_img then
 			if P.gameEnv.dropFX then
 				P:createDropFX(P.curX,P.curY+1,P.curX+P.c-1,P.y_img+P.r-1)
@@ -2069,6 +2275,7 @@ function player.act.insLeft(P,auto)
 	if P.gameEnv.nofly then return end
 	local x0,y0=P.curX,P.curY
 	while not P:ifoverlap(P.cur.bk,P.curX-1,P.curY)do
+		P:recordAction(netMsg.move(-1))
 		P.curX=P.curX-1
 		if P.gameEnv.dropFX then
 			P:createDropFX(P.curX+P.c,P.curY+P.r-1,P.curX+P.c,P.curY)
@@ -2091,6 +2298,7 @@ function player.act.insRight(P,auto)
 	if P.gameEnv.nofly then return end
 	local x0,y0=P.curX,P.curY
 	while not P:ifoverlap(P.cur.bk,P.curX+1,P.curY)do
+		P:recordAction(netMsg.move(1))
 		P.curX=P.curX+1
 		if P.gameEnv.dropFX then
 			P:createDropFX(P.curX-1,P.curY+P.r-1,P.curX-1,P.curY)
@@ -2122,6 +2330,7 @@ function player.act.insDown(P)
 end
 function player.act.down1(P)
 	if P.curY~=P.y_img then
+		P:recordAction(netMsg.down(1))
 		P.curY=P.curY-1
 		P.spinLast=false
 	end
@@ -2129,6 +2338,7 @@ end
 function player.act.down4(P)
 	for _=1,4 do
 		if P.curY~=P.y_img then
+			P:recordAction(netMsg.down(1))
 			P.curY=P.curY-1
 			P.spinLast=false
 		else
@@ -2139,6 +2349,7 @@ end
 function player.act.down10(P)
 	for _=1,10 do
 		if P.curY~=P.y_img then
+			P:recordAction(netMsg.down(1))
 			P.curY=P.curY-1
 			P.spinLast=false
 		else
@@ -2440,8 +2651,6 @@ function PLY.newRemotePlayer(id,x,y,size,actions)
 
 	P.human=false -- 录像不是人为操作
 	P.remote=true -- 远程操作
-	-- 开发中
-	-- P.updateAction=buildActionFunctionFromActions(P, actions)
 
 	loadGameEnv(P)
 	applyGameEnv(P)
@@ -2477,6 +2686,8 @@ function PLY.newPlayer(id,x,y,size)
 	P.human=true
 	P.RS=kickList.TRS
 	players.human=players.human+1
+
+	P.recorder = netRecorder.new()
 end
 --------------------------</Generator>--------------------------
 return PLY

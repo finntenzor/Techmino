@@ -425,6 +425,8 @@ local langList={
 			{"自定义",		"普通",		"画点什么然后把它消除!"},
 			{"自定义",		"拼图",		"画点什么然后把它拼出来吧!"},
 			{"竞速",		"五联块",	"伤脑筋十八块"},
+			{"5人联机(精确)",		"在线打块",	"(只支持最新版)"},
+			{"5人联机(步进)",		"在线打块",	"(只支持最新版)"},
 		},
 	},
 	{
@@ -1264,6 +1266,8 @@ local langList={
 			{"Custom",			"NORMAL",		"Draw something then clear it!!"},
 			{"Custom",			"PUZZLE",		"Draw something then stack it!!"},
 			{"Sprint",			"Pentomino",	"Puzzle-18"},
+			{"Online 5 Player(immediate)",			"Online Play",	"Latest version only"},
+			{"Online 5 Player(step)",			"Online Play",	"Latest version only"},
 		},
 	},
 	{

@@ -3,6 +3,7 @@ local kb=love.keyboard
 local Timer=love.timer.getTime
 local int,abs,rnd,max,min,sin,ln=math.floor,math.abs,math.random,math.max,math.min,math.sin,math.log
 local ins,rem=table.insert,table.remove
+local netFacade=require("parts/network/facade")
 
 local Tmr={}
 function Tmr.load()
@@ -228,10 +229,12 @@ function Tmr.play(dt)
 	elseif restartCount>0 then
 		restartCount=restartCount>2 and restartCount-2 or 0
 	end--Counting,include pre-das,directy RETURN,or restart counting
+	netFacade.poll()
 	for p=1,#players do
 		local P=players[p]
 		P:update(dt)
 	end
+	netFacade.send()
 	if frame%120==0 then
 		if modeEnv.royaleMode then freshMostDangerous()end
 		if marking and rnd()<.2 then

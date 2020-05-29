@@ -43,7 +43,7 @@ local gameEnv0={
 }
 local WidComboAtk={0,0,1,1,2,2,2,3,3,3,4,4,3}--2 else
 local DigComboAtk={0,0,1,1,2,2,3,3,4,4,4}--5 else
-local b2bPoint={50,100,180,300}
+local b2bPoint={50,100,180,300}   
 local b2bATK={3,5,8,10}
 local clearSCR={80,200,400}
 local spinSCR={--[blockName][row]
@@ -362,6 +362,10 @@ local function Pupdate_alive(P,dt)
 			P.dropDelay=D-1
 			goto stop
 		end
+		-- print('wtf')
+		-- 这块代码似乎并不是用来控制逐步下降的
+		-- 即使把这一块整个注释掉 也能正确记录软降操作
+		-- 我有点蒙
 		if D==1 then
 			if P.remote then
 				-- 远程操作的玩家纵坐标不直接变化
@@ -375,8 +379,10 @@ local function Pupdate_alive(P,dt)
 			D=1/D--fall dist
 			if D<_ then
 				P.curY=P.curY-D
+				P:recordAction(netMsg.down(D))
 				assert(P.curY==int(P.curY),"y:"..P.curY.." fall:"..D.." D_env:"..P.gameEnv.drop)
 			else
+				P:recordAction(netMsg.down(P.curY-P.y_img))
 				P.curY=P.y_img
 			end
 		end
@@ -2251,6 +2257,7 @@ function player.act.softDrop(P)
 		P.downing=1
 		if P.control and P.waiting==-1 then
 			if P.curY~=P.y_img then
+				P:recordAction(netMsg.down(1))
 				P.curY=P.curY-1
 				P.spinLast=false
 			end
@@ -2655,6 +2662,10 @@ function PLY.newRemotePlayer(id,x,y,size,actions)
 	loadGameEnv(P)
 	applyGameEnv(P)
 	prepareSequence(P)
+
+	-- 覆盖参数 无重力
+	P.gameEnv.drop=1e99
+	P.gameEnv.lock=1e99
 end
 function PLY.newAIPlayer(id,x,y,size,AIdata)
 	local P=newEmptyPlayer(id,x,y,size)
